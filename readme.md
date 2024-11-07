@@ -13,11 +13,15 @@ This repository contains a comprehensive Library Management System developed usi
 - **Logging**: Comprehensive logging for monitoring and debugging.
 
 ## 📸 Screenshot:
-![Screenshot](https://github.com/dundd2/LibraManage/blob/main/Screenshot/SC%20(1).png)
-![Screenshot](https://github.com/dundd2/LibraManage/blob/main/Screenshot/SC%20(2).png)
-![Screenshot](https://github.com/dundd2/LibraManage/blob/main/Screenshot/SC%20(3).png)
-![Screenshot](https://github.com/dundd2/LibraManage/blob/main/Screenshot/SC%20(4).png)
-![Screenshot](https://github.com/dundd2/LibraManage/blob/main/Screenshot/SC%20(5).png)
+![Screenshot](https://github.com/dundd2/LibraManage/blob/main/Screenshot/SC(1).png)
+![Screenshot](https://github.com/dundd2/LibraManage/blob/main/Screenshot/SC(2).png)
+![Screenshot](https://github.com/dundd2/LibraManage/blob/main/Screenshot/SC(3).png)
+![Screenshot](https://github.com/dundd2/LibraManage/blob/main/Screenshot/SC(4).png)
+![Screenshot](https://github.com/dundd2/LibraManage/blob/main/Screenshot/SC(5).png)
+![Screenshot](https://github.com/dundd2/LibraManage/blob/main/Screenshot/SC(6).png)
+![Screenshot](https://github.com/dundd2/LibraManage/blob/main/Screenshot/SC(7).png)
+![Screenshot](https://github.com/dundd2/LibraManage/blob/main/Screenshot/SC(8).png)
+![Screenshot](https://github.com/dundd2/LibraManage/blob/main/Screenshot/SC(9).png)
 
 ## Skills Demonstrated
 ### Programming Skills
