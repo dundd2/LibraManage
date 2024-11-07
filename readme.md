@@ -23,6 +23,11 @@ This repository contains a comprehensive Library Management System developed usi
 ![Screenshot](https://github.com/dundd2/LibraManage/blob/main/Screenshot/SC(8).png)
 ![Screenshot](https://github.com/dundd2/LibraManage/blob/main/Screenshot/SC(9).png)
 
+
+## Default Login Credentials
+- **Username**: 1
+- **Password**: 1
+
 ## Skills Demonstrated
 ### Programming Skills
 - **Python**: Core programming language used for the entire project.
