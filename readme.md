@@ -1,13 +1,13 @@
 # LibraManage
 
 ## Overview
-This repository contains a comprehensive Library Management System developed using Python and Tkinter. The project was undertaken as a personal endeavor to enhance my programming skills and to create a functional application that can be used to manage library operations efficiently. The system includes features for user authentication, book management, member management, and transaction handling.
+This repository contains a comprehensive Library Management System developed using Python and Tkinter. I undertook the project as a personal endeavor to enhance my programming skills and create a functional application that can be used to manage library operations efficiently. The system includes features for user authentication, book management, member management, and transaction handling.
 
 ## Features
 - **User Authentication**: Secure login system with password hashing.
 - **Book Management**: Add, update, delete, and search for books.
 - **Member Management**: Add, update, delete, and search for library members.
-- **Transaction Handling**: Issue and return books, track loan history.
+- **Transaction Handling**: Issue and return books, and track loan history.
 - **User Interface**: Intuitive and user-friendly interface using Tkinter.
 - **Data Persistence**: SQLite database for storing all data.
 - **Logging**: Comprehensive logging for monitoring and debugging.
@@ -28,7 +28,7 @@ This repository contains a comprehensive Library Management System developed usi
 - **Python**: Core programming language used for the entire project.
 - **Tkinter**: Used for creating the graphical user interface.
 - **SQLite**: Database management for storing and retrieving data.
-- **Regular Expressions**: For validating email, phone numbers, and ISBNs.
+- **Regular Expressions**: This is for validating email, phone numbers, and ISBNs.
 - **Hashing**: Secure password storage using SHA-256 hashing.
 - **Logging**: Implemented logging for tracking application events and errors.
 
