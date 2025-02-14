@@ -32,33 +32,248 @@ try:
 except ImportError:
     print("matplotlib not found - charts will be disabled")
 
-class UIBase:
-    """Base class for UI components with common functionality"""
-    def __init__(self, root):  # added root parameter
-        self.root = root  # now the attribute "root" is available
-        self.style: Optional[ttk.Style] = None
-        self.is_dark_mode: bool = False
+class ValidationError(Exception):
+    """Custom exception for validation errors"""
+    pass
+
+class DataValidator:
+    """Validation utilities for data input"""
+    @staticmethod
+    def validate_string(value: str, field_name: str, min_length: int = 1, max_length: int = 255) -> str:
+        """Validate string input"""
+        if not isinstance(value, str):
+            raise ValidationError(f"{field_name} must be a string")
+        value = value.strip()
+        if len(value) < min_length:
+            raise ValidationError(f"{field_name} cannot be empty")
+        if len(value) > max_length:
+            raise ValidationError(f"{field_name} cannot exceed {max_length} characters")
+        return value
+
+    @staticmethod
+    def validate_integer(value: str, field_name: str, min_value: int = None, max_value: int = None) -> int:
+        """Validate integer input"""
+        try:
+            num = int(value)
+            if min_value is not None and num < min_value:
+                raise ValidationError(f"{field_name} must be at least {min_value}")
+            if max_value is not None and num > max_value:
+                raise ValidationError(f"{field_name} must not exceed {max_value}")
+            return num
+        except ValueError:
+            raise ValidationError(f"{field_name} must be a valid number")
+
+    @staticmethod
+    def validate_isbn(isbn: str) -> str:
+        """Validate ISBN format"""
+        isbn = isbn.replace('-', '').replace(' ', '')
+        if not isbn.isdigit() or len(isbn) not in [10, 13]:
+            raise ValidationError("Invalid ISBN format")
+        return isbn
+
+    @staticmethod
+    def sanitize_input(value: str) -> str:
+        """Sanitize input string"""
+        if not isinstance(value, str):
+            return str(value)
+        return value.strip()
+
+class SafeWidgetMixin:
+    """Mixin class for safe widget operations"""
+    def safe_get(self, widget, default="") -> str:
+        """Safely get widget value"""
+        try:
+            if hasattr(widget, 'get'):
+                return str(widget.get()).strip()
+            return default
+        except Exception:
+            return default
+
+    def safe_set(self, widget, value) -> None:
+        """Safely set widget value"""
+        try:
+            if hasattr(widget, 'set'):
+                widget.set(value)
+            elif hasattr(widget, 'delete') and hasattr(widget, 'insert'):
+                widget.delete(0, tk.END)
+                widget.insert(0, str(value))
+        except Exception as e:
+            logger.error(f"Error setting widget value: {e}")
+
+    def safe_destroy(self, widget) -> None:
+        """Safely destroy widget"""
+        try:
+            if widget and widget.winfo_exists():
+                widget.destroy()
+        except Exception as e:
+            logger.error(f"Error destroying widget: {e}")
+
+class ErrorBoundary:
+    """Error boundary for handling widget errors"""
+    def __init__(self, widget, logger):
+        self.widget = widget
+        self.logger = logger
+
+    def handle_error(self, exception: Exception, context: str = ""):
+        """Handle errors in UI operations"""
+        error_msg = str(exception)
+        self.logger.error(f"Error in {context}: {error_msg}")
+        
+        # Clear the problematic widget
+        for child in self.widget.winfo_children():
+            child.destroy()
+            
+        # Show error message to user
+        error_frame = ttk.Frame(self.widget)
+        error_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
+        
+        ttk.Label(error_frame, 
+                 text="⚠️ An error occurred",
+                 font=(Config.FONT_FAMILY, 14, 'bold'),
+                 foreground='red').pack(pady=5)
+                 
+        ttk.Label(error_frame, 
+                 text=error_msg,
+                 wraplength=300).pack(pady=5)
+                 
+        ttk.Button(error_frame,
+                  text="Retry",
+                  command=self.widget.retry_operation if hasattr(self.widget, 'retry_operation') else None).pack(pady=10)
+
+class UIBase(SafeWidgetMixin):
+    """Base class for UI components with error handling"""
+    def __init__(self, root):
+        self.root = root
+        self.style = None
+        self._is_dark_mode = False
+        self.error_boundary = ErrorBoundary(self.root, logger)
         self.setup_theme()
 
     def setup_theme(self) -> None:
-        theme = Config.DARK_THEME if self.is_dark_mode else Config.LIGHT_THEME
-        
-        if HAS_TTKTHEMES and hasattr(self, 'root') and self.root is not None:
-            self.style = ThemedStyle(self.root)
-            self.style.set_theme("equilux" if self.is_dark_mode else "breeze")
-        else:
+        """Setup theme based on current mode with error handling"""
+        try:
+            theme = Config.DARK_THEME if self._is_dark_mode else Config.LIGHT_THEME
+            
+            if HAS_TTKTHEMES:
+                try:
+                    self.style = ThemedStyle(self.root)
+                except AttributeError as e:
+                    logger.error(f"Error setting up theme: {e}")
+                    self.style = ttk.Style(self.root)
+            else:
+                self.style = ttk.Style(self.root)
+
+            # Configure base styles using string values for colors
+            self.style.configure('.', 
+                               background=str(theme['background']),
+                               foreground=str(theme['text']),
+                               fieldbackground=str(theme['background']))
+            
+            # Configure specific widget styles
+            self.style.configure('TFrame', background=str(theme['background']))
+            self.style.configure('TLabel', 
+                               background=str(theme['background']),
+                               foreground=str(theme['text']))
+            self.style.configure('TButton', 
+                               background=str(theme['button']),
+                               foreground=str(theme['button_text']))
+            self.style.map('TButton',
+                          background=[('active', str(theme['button_hover']))],
+                          foreground=[('active', str(theme['button_text']))])
+            
+            self.style.configure('Accent.TButton',
+                               background=str(theme['primary']),
+                               foreground=str(theme['button_text']))
+            self.style.map('Accent.TButton',
+                          background=[('active', str(theme['button_hover']))],
+                          foreground=[('active', str(theme['button_text']))])
+            
+            self.style.configure('Card.TFrame',
+                               background=str(theme['card']),
+                               relief='solid',
+                               borderwidth=1)
+            self.style.configure('Card.TLabel',
+                               background=str(theme['card']),
+                               foreground=str(theme['text']))
+            
+            self.style.configure('Sidebar.TFrame',
+                               background=str(theme['sidebar']))
+            self.style.configure('Sidebar.TButton',
+                               background=str(theme['sidebar']),
+                               foreground=str(theme['text']),
+                               font=('Segoe UI', 11),
+                               padding=15)
+            self.style.map('Sidebar.TButton',
+                          background=[('active', str(theme['sidebar_hover']))],
+                          foreground=[('active', str(theme['text']))])
+            
+            self.style.configure('Sidebar.TLabel',
+                               background=str(theme['sidebar']),
+                               foreground=str(theme['text']))
+            
+            # Configure Entry widget colors
+            self.style.configure('TEntry',
+                               fieldbackground=str(theme['background']),
+                               foreground=str(theme['text']),
+                               insertcolor=str(theme['text']))
+            
+            # Configure Combobox colors
+            self.style.configure('TCombobox',
+                               fieldbackground=str(theme['background']),
+                               background=str(theme['background']),
+                               foreground=str(theme['text']),
+                               arrowcolor=str(theme['text']))
+            
+            # Configure Checkbutton colors
+            self.style.configure('TCheckbutton',
+                               background=str(theme['background']),
+                               foreground=str(theme['text']))
+            
+            # Update root window background
+            if self.root:
+                self.root.configure(background=str(theme['background']))
+                
+            # Update all widgets recursively
+            self._update_widget_theme(self.root, theme)
+        except Exception as e:
+            logger.error(f"Error setting up theme: {e}")
+            # Fallback to default theme
             self.style = ttk.Style()
-        
-        self.style.configure('TFrame', background=theme['background'])
-        self.style.configure('TLabel', background=theme['background'], foreground=theme['text'])
-        self.style.configure('TButton', background=theme['button'], foreground=theme['button_text'])
-        self.style.configure('Card.TFrame', background=theme['card'], relief='solid', borderwidth=1)
-        self.style.configure('Card.TLabel', background=theme['card'])
-        self.style.configure('Sidebar.TButton',
-                           background=theme['sidebar'],
-                           foreground=theme['text'],
-                           font=('Segoe UI', 11),
-                           padding=15)
+            self.style.configure('.', background='white', foreground='black')
+
+    def _update_widget_theme(self, widget, theme):
+        """Recursively update widget and its children with new theme colors"""
+        if not widget:
+            return
+            
+        try:
+            widget_type = widget.winfo_class()
+            
+            if widget_type in ('TFrame', 'Frame'):
+                widget.configure(background=theme['background'])
+            elif widget_type in ('TLabel', 'Label'):
+                widget.configure(background=theme['background'], foreground=theme['text'])
+            elif widget_type == 'TButton':
+                widget.configure(style='TButton')
+            elif widget_type == 'TEntry':
+                widget.configure(style='TEntry')
+            elif widget_type == 'TCombobox':
+                widget.configure(style='TCombobox')
+            elif widget_type == 'Entry':
+                widget.configure(
+                    background=theme['background'],
+                    foreground=theme['text'],
+                    insertbackground=theme['text']
+                )
+            
+            # Recursively update children
+            for child in widget.winfo_children():
+                self._update_widget_theme(child, theme)
+                
+        except Exception as e:
+            # Log any errors but continue updating other widgets
+            logger.error(f"Error updating widget theme: {e}")
+            pass
 
     def create_card(self, parent: ttk.Frame, title: str, value: Any) -> ttk.Frame:
         """Create a styled card widget"""
@@ -107,6 +322,42 @@ class UIBase:
                 if key in table_headers:
                     ttk.Label(table_frame, text=str(value)).grid(
                         row=i, column=j, padx=5, pady=2, sticky='w')
+
+    def safe_execute(self, operation, context: str = ""):
+        """Execute UI operation with error handling"""
+        try:
+            return operation()
+        except Exception as e:
+            self.error_boundary.handle_error(e, context)
+            return None
+
+def validate_book_data(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Validate book input data"""
+    validated = {}
+    try:
+        validated['title'] = DataValidator.validate_string(data['title'], "Title")
+        validated['author'] = DataValidator.validate_string(data['author'], "Author")
+        validated['isbn'] = DataValidator.validate_isbn(data['isbn'])
+        validated['quantity'] = DataValidator.validate_integer(data['quantity'], "Quantity", min_value=0)
+        validated['category'] = DataValidator.validate_string(data['category'], "Category")
+        return validated
+    except Exception as e:
+        raise ValidationError(f"Book validation failed: {str(e)}")
+
+def validate_member_data(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Validate member input data"""
+    validated = {}
+    try:
+        validated['name'] = DataValidator.validate_string(data['name'], "Name")
+        validated['email'] = DataValidator.validate_string(data['email'], "Email")
+        if not validate_email(data['email']):
+            raise ValidationError("Invalid email format")
+        validated['phone'] = DataValidator.validate_string(data['phone'], "Phone")
+        if not validate_phone(data['phone']):
+            raise ValidationError("Invalid phone format")
+        return validated
+    except Exception as e:
+        raise ValidationError(f"Member validation failed: {str(e)}")
 
 class LoginWindow(UIBase):
     def __init__(self, root: tk.Tk, db: DatabaseHandler):
@@ -161,71 +412,113 @@ class LoginWindow(UIBase):
         ttk.Button(parent, text="Sign In", command=self.login, style='Accent.TButton', width=20).pack(pady=20)
 
     def login(self) -> None:
-        """Handle login attempt"""
-        # Check if the StringVars exist and are properly initialized
-        if not hasattr(self, 'username') or not hasattr(self, 'password'):
-            logger.error("Login fields not properly initialized")
-            show_status_message(self.root, "Internal error: Login fields not initialized", "error")
-            return
+        """Handle login with enhanced security"""
+        def operation():
+            try:
+                # Rate limiting check
+                if hasattr(self, '_last_login_attempt'):
+                    time_diff = datetime.now() - self._last_login_attempt
+                    if time_diff.seconds < 3:  # 3 seconds cooldown
+                        raise ValidationError("Please wait before trying again")
+                
+                self._last_login_attempt = datetime.now()
+                username = DataValidator.validate_string(
+                    self.safe_get(self.username), 
+                    "Username",
+                    min_length=1
+                )
+                password = self.password.get()
+                if not password:
+                    raise ValidationError("Password cannot be empty")
 
-        username = self.username.get().strip()
-        password = self.password.get()
+                # Attempt authentication with timeout
+                user = self.db.authenticate_user(username, password)
+                
+                if user:
+                    logger.info(f"User {username} logged in successfully")
+                    MainWindow(self.root, self.db, Session(user))
+                    self.root.withdraw()
+                else:
+                    logger.warning(f"Failed login attempt for user {username}")
+                    show_status_message(self.root, "Invalid username or password", "error")
 
-        if not username or not password:
-            show_status_message(self.root, "Please fill in both username and password", "error")
-            return
-
-        try:
-            user = self.db.authenticate_user(username, password)
-            
-            if user:
-                logger.info(f"User {username} logged in successfully")
-                MainWindow(self.root, self.db, Session(user))
-                self.root.withdraw()
-            else:
-                logger.warning(f"Failed login attempt for user {username}")
-                show_status_message(self.root, "Invalid username or password", "error")
-
-        except Exception as e:
-            logger.error(f"Login error: {e}")
-            show_status_message(self.root, "An error occurred during login", "error")
+            except ValidationError as e:
+                show_status_message(self.root, str(e), "error")
+            except Exception as e:
+                logger.error(f"Login error: {e}")
+                show_status_message(self.root, "An error occurred during login", "error")
+                raise
+                
+        self.safe_execute(operation, "login")
 
 class MainWindow(UIBase):
     def __init__(self, root: tk.Tk, db: DatabaseHandler, session: Session):
-        self.root: tk.Toplevel = tk.Toplevel(root)
+        self.root: tk.Toplevel = tk.Toplevel()
         self.db: DatabaseHandler = db
         self.session: Session = session
-        self._is_dark_mode: tk.BooleanVar = tk.BooleanVar(value=False)
+        self._is_dark_mode = False
         self.notification_system: NotificationSystem = NotificationSystem(db)
         self.current_page: int = 1
         self.table_frame: Optional[ttk.Frame] = None
         self.members_table: Optional[ttk.Treeview] = None
         self.sort_var: tk.BooleanVar = tk.BooleanVar(value=False)
-        super().__init__(root)
+        super().__init__(self.root)
         self.setup_main_window()
         self.center_window()
         self.check_overdue_books()
 
-    @property
-    def is_dark_mode(self) -> bool:
-        return bool(self._is_dark_mode.get())
-
-    @is_dark_mode.setter
-    def is_dark_mode(self, value: bool) -> None:
-        self._is_dark_mode.set(value)
-
     def setup_main_window(self) -> None:
+        """Setup the main window with proper dimensions"""
         self.root.title("Library Management System")
-        self.root.geometry("1200x800")
         
-        # Main container
+        # Get screen dimensions
+        screen_width = self.root.winfo_screenwidth()
+        screen_height = self.root.winfo_screenheight()
+        
+        # Calculate window size (80% of screen size)
+        window_width = int(screen_width * 0.8)
+        window_height = int(screen_height * 0.8)
+        
+        # Set minimum size
+        self.root.minsize(1024, 768)
+        
+        # Set window size and position
+        self.root.geometry(f"{window_width}x{window_height}")
+        
+        # Configure grid weights for proper resizing
+        self.root.grid_rowconfigure(0, weight=1)
+        self.root.grid_columnconfigure(0, weight=1)
+        
+        # Main container with proper expansion
         self.main_container = ttk.Frame(self.root, style='TFrame')
         self.main_container.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         
-        # Sidebar and content areas
+        # Setup sidebar and content areas
         self.setup_sidebar()
         self.setup_content_area()
         self.show_dashboard()
+
+    def center_window(self) -> None:
+        """Center the window on the screen"""
+        if self.root is None:
+            return
+            
+        self.root.update_idletasks()
+        
+        # Get window size
+        window_width = self.root.winfo_width()
+        window_height = self.root.winfo_height()
+        
+        # Get screen dimensions
+        screen_width = self.root.winfo_screenwidth()
+        screen_height = self.root.winfo_screenheight()
+        
+        # Calculate position
+        x = (screen_width - window_width) // 2
+        y = (screen_height - window_height) // 2
+        
+        # Set window position
+        self.root.geometry(f"+{x}+{y}")
 
     def setup_sidebar(self) -> None:
         self.sidebar = ttk.Frame(self.main_container, style='Sidebar.TFrame')
@@ -261,10 +554,13 @@ class MainWindow(UIBase):
         self.content_area = ttk.Frame(self.main_container, style='TFrame')
         self.content_area.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=5, pady=5)
         
-        # Theme toggle
-        theme_btn = ttk.Button(self.content_area, text="🌓 Toggle Theme",
-                             command=self.toggle_theme)
-        theme_btn.pack(side=tk.TOP, anchor=tk.NE, padx=10, pady=5)
+        # Theme toggle with icon
+        theme_text = "🌙 Dark Mode" if not self._is_dark_mode else "☀️ Light Mode"
+        self.theme_btn = ttk.Button(self.content_area, 
+                                  text=theme_text,
+                                  command=self.toggle_theme,
+                                  style='Accent.TButton')
+        self.theme_btn.pack(side=tk.TOP, anchor=tk.NE, padx=10, pady=5)
         
         self.content_frame = ttk.Frame(self.content_area, style='TFrame')
         self.content_frame.pack(fill=tk.BOTH, expand=True)
@@ -411,35 +707,39 @@ class MainWindow(UIBase):
                       row=len(fields), column=0, columnspan=2, pady=20)
 
     def add_book(self) -> None:
-        try:
-            data = {k: v.get().strip() for k, v in self.book_entries.items()}
-            
-            if not all(data.values()):
-                raise ValueError("All fields are required!")
+        """Add book with input validation and error handling"""
+        def operation():
+            try:
+                # Collect and validate all inputs first
+                data = {k: DataValidator.sanitize_input(self.safe_get(v)) 
+                       for k, v in self.book_entries.items()}
                 
-            if not validate_isbn(data['ISBN:']):
-                raise ValueError("Invalid ISBN format!")
+                # Use validator to check data
+                validated_data = validate_book_data({
+                    'title': data['Title:'],
+                    'author': data['Author:'],
+                    'isbn': data['ISBN:'],
+                    'quantity': data['Quantity:'],
+                    'category': data['Category:']
+                })
                 
-            quantity = int(data['Quantity:'])
-            if quantity <= 0:
-                raise ValueError("Quantity must be positive!")
+                # Check for duplicate ISBN
+                if self.db.book_exists(validated_data['isbn']):
+                    raise ValidationError("A book with this ISBN already exists")
 
-            self.db.add_book(
-                title=data['Title:'],
-                author=data['Author:'],
-                isbn=data['ISBN:'],
-                quantity=quantity,
-                category=data['Category:']
-            )
-            
-            show_status_message(self.root, "Book added successfully!", "success")
-            self.clear_entries(self.book_entries)
-            
-        except ValueError as e:
-            show_status_message(self.root, str(e), "error")
-        except Exception as e:
-            logger.error(f"Error adding book: {e}")
-            show_status_message(self.root, "Failed to add book", "error")
+                # Attempt database operation with transaction
+                self.db.add_book(**validated_data)
+                show_status_message(self.root, "Book added successfully!", "success")
+                self.clear_entries(self.book_entries)
+                
+            except ValidationError as e:
+                show_status_message(self.root, str(e), "error")
+            except Exception as e:
+                logger.error(f"Error adding book: {e}")
+                show_status_message(self.root, "Failed to add book", "error")
+                raise
+                
+        self.safe_execute(operation, "adding book")
 
     def show_members(self) -> None:
         self.clear_content()
@@ -495,6 +795,34 @@ class MainWindow(UIBase):
                   style='Accent.TButton').grid(
                       row=len(fields), column=0, columnspan=2, pady=20)
 
+    def add_member(self) -> None:
+        """Add member with input validation and error handling"""
+        def operation():
+            try:
+                # Collect and validate all inputs first
+                data = {k: v.get().strip() for k, v in self.member_entries.items()}
+                
+                # Use validator to check data
+                validated_data = validate_member_data({
+                    'name': data['Name:'],
+                    'email': data['Email:'],
+                    'phone': data['Phone:']
+                })
+                
+                # Attempt database operation
+                self.db.add_member(**validated_data)
+                show_status_message(self.root, "Member added successfully!", "success")
+                self.clear_member_entries()
+                
+            except ValidationError as e:
+                show_status_message(self.root, str(e), "error")
+            except Exception as e:
+                logger.error(f"Error adding member: {e}")
+                show_status_message(self.root, "Failed to add member", "error")
+                raise
+                
+        self.safe_execute(operation, "adding member")
+
     def show_issue_book(self) -> None:
         self.clear_content()
         
@@ -520,6 +848,32 @@ class MainWindow(UIBase):
                   command=self.issue_book,
                   style='Accent.TButton').grid(
                       row=2, column=0, columnspan=2, pady=20)
+
+    def issue_book(self) -> None:
+        """Issue book with input validation and error handling"""
+        def operation():
+            try:
+                member_id = self.member_id_entry.get().strip()
+                isbn = self.book_isbn_entry.get().strip()
+
+                # Validate inputs
+                member_id = DataValidator.validate_integer(member_id, "Member ID", min_value=1)
+                isbn = DataValidator.validate_isbn(isbn)
+
+                # Attempt database operation
+                self.db.issue_book(member_id, isbn)
+                show_status_message(self.root, "Book issued successfully!", "success")
+                self.member_id_entry.delete(0, tk.END)
+                self.book_isbn_entry.delete(0, tk.END)
+
+            except ValidationError as e:
+                show_status_message(self.root, str(e), "error")
+            except Exception as e:
+                logger.error(f"Error issuing book: {e}")
+                show_status_message(self.root, "Failed to issue book", "error")
+                raise
+                
+        self.safe_execute(operation, "issuing book")
 
     def show_return_book(self) -> None:
         self.clear_content()
@@ -547,6 +901,31 @@ class MainWindow(UIBase):
                   style='Accent.TButton').grid(
                       row=len(fields), column=0, columnspan=2, pady=20)
 
+    def return_book(self) -> None:
+        """Return book with input validation and error handling"""
+        def operation():
+            try:
+                member_id = self.return_entries['Member ID:'].get().strip()
+                isbn = self.return_entries['Book ISBN:'].get().strip()
+
+                # Validate inputs
+                member_id = DataValidator.validate_integer(member_id, "Member ID", min_value=1)
+                isbn = DataValidator.validate_isbn(isbn)
+
+                # Attempt database operation
+                self.db.return_book(member_id, isbn)
+                show_status_message(self.root, "Book returned successfully!", "success")
+                self.clear_return_entries()
+
+            except ValidationError as e:
+                show_status_message(self.root, str(e), "error")
+            except Exception as e:
+                logger.error(f"Error returning book: {e}")
+                show_status_message(self.root, "Failed to return book", "error")
+                raise
+                
+        self.safe_execute(operation, "returning book")
+
     # Utility methods
     def clear_content(self) -> None:
         for widget in self.content_frame.winfo_children():
@@ -557,16 +936,6 @@ class MainWindow(UIBase):
             if hasattr(entry, 'delete'):
                 entry.delete(0, tk.END)
 
-    def center_window(self) -> None:
-        if self.root is None:
-            return
-        self.root.update_idletasks()
-        width = self.root.winfo_width()
-        height = self.root.winfo_height()
-        x = (self.root.winfo_screenwidth() // 2) - (width // 2)
-        y = (self.root.winfo_screenheight() // 2) - (height // 2)
-        self.root.geometry(f'+{x}+{y}')
-
     def check_overdue_books(self) -> None:
         overdue_loans = self.db.get_overdue_loans()
         if overdue_loans:
@@ -574,10 +943,26 @@ class MainWindow(UIBase):
         self.root.after(24*60*60*1000, self.check_overdue_books)
 
     def toggle_theme(self) -> None:
-        if isinstance(self._is_dark_mode, tk.BooleanVar):
-            self._is_dark_mode.set(not self._is_dark_mode.get())
+        """Toggle between light and dark mode"""
+        self._is_dark_mode = not self._is_dark_mode
+        
+        # Update theme button text
+        theme_text = "☀️ Light Mode" if self._is_dark_mode else "🌙 Dark Mode"
+        self.theme_btn.configure(text=theme_text)
+        
+        # Apply new theme
         self.setup_theme()
-        self.show_dashboard()  # Refresh current view
+        
+        # Ensure all frames are updated
+        if self.main_container:
+            theme = Config.DARK_THEME if self._is_dark_mode else Config.LIGHT_THEME
+            self._update_widget_theme(self.main_container, theme)
+            self._update_widget_theme(self.sidebar, theme)
+            self._update_widget_theme(self.content_area, theme)
+            self._update_widget_theme(self.content_frame, theme)
+        
+        # Refresh current view to ensure all widgets are properly themed
+        self.show_dashboard()
 
     def search_books(self) -> None:
         """Search books based on current filters"""
@@ -647,109 +1032,6 @@ class MainWindow(UIBase):
             ttk.Label(activities_frame,
                     text="Unable to load recent activities",
                     foreground="red").pack(pady=10)
-
-    def add_member(self) -> None:
-        """Handle adding a new member"""
-        try:
-            name = self.member_entries['Name:'].get().strip()
-            email = self.member_entries['Email:'].get().strip()
-            phone = self.member_entries['Phone:'].get().strip()
-
-            if not all([name, email, phone]):
-                raise ValueError("All fields are required!")
-
-            if not validate_email(email):
-                raise ValueError("Invalid email format!")
-
-            if not validate_phone(phone):
-                raise ValueError("Invalid phone format!")
-
-            self.db.add_member(name, email, phone)
-            show_status_message(self.root, "Member added successfully!", "success")
-            self.clear_member_entries()
-
-        except ValueError as e:
-            show_status_message(self.root, str(e), "error")
-        except Exception as e:
-            logger.error(f"Error adding member: {e}")
-            show_status_message(self.root, "Failed to add member", "error")
-
-    def display_members(self, members: List[Dict[str, Any]]) -> None:
-        """Display member data in the table"""
-        if self.members_table is None:
-            return
-            
-        for widget in self.members_table.winfo_children():
-            if type(widget) is not ttk.Label or widget.grid_info()['row'] != 0:
-                widget.destroy()
-
-        for i, member in enumerate(members, 1):
-            ttk.Label(self.members_table, text=str(member['id'])).grid(
-                row=i, column=0, padx=5, pady=2)
-            ttk.Label(self.members_table, text=member['name']).grid(
-                row=i, column=1, padx=5, pady=2)
-            ttk.Label(self.members_table, text=member['email']).grid(
-                row=i, column=2, padx=5, pady=2)
-            ttk.Label(self.members_table, text=member['phone']).grid(
-                row=i, column=3, padx=5, pady=2)
-            
-            actions_frame = ttk.Frame(self.members_table)
-            actions_frame.grid(row=i, column=4, padx=5, pady=2)
-            
-            ttk.Button(actions_frame, text="Edit",
-                      command=lambda m=member: self.edit_member(m)).pack(
-                          side=tk.LEFT, padx=2)
-            ttk.Button(actions_frame, text="Delete",
-                      command=lambda m=member: self.delete_member(m)).pack(
-                          side=tk.LEFT, padx=2)
-
-    def issue_book(self) -> None:
-        """Handle issuing a book to a member"""
-        try:
-            member_id = self.member_id_entry.get().strip()
-            isbn = self.book_isbn_entry.get().strip()
-
-            if not all([member_id, isbn]):
-                raise ValueError("All fields are required!")
-
-            if not validate_isbn(isbn):
-                raise ValueError("Invalid ISBN format!")
-
-            self.db.issue_book(int(member_id), isbn)
-            show_status_message(self.root, "Book issued successfully!", "success")
-            self.member_id_entry.delete(0, tk.END)
-            self.book_isbn_entry.delete(0, tk.END)
-
-        except ValueError as e:
-            show_status_message(self.root, str(e), "error")
-        except Exception as e:
-            logger.error(f"Error issuing book: {e}")
-            show_status_message(self.root, "Failed to issue book", "error")
-
-    def return_book(self) -> None:
-        """Handle book return"""
-        try:
-            member_id = self.return_entries['Member ID:'].get().strip()
-            isbn = self.return_entries['Book ISBN:'].get().strip()
-    
-            if not all([member_id, isbn]):
-                raise ValueError("Please fill in all fields.")
-
-            if not member_id.isdigit():
-                raise ValueError("Member ID must be a number.")
-    
-            if not validate_isbn(isbn):
-                raise ValueError("Invalid ISBN.")
-    
-            self.db.return_book(int(member_id), isbn)
-            show_status_message(self.root, "Book returned successfully!", "success")
-            self.clear_return_entries()
-    
-        except ValueError as e:
-            show_status_message(self.root, str(e), "error")
-        except Exception as e:
-            logger.error(f"Error returning book: {e}")
-            show_status_message(self.root, "Error occurred while returning book", "error")
 
     def show_status_message(self, widget: Union[tk.Widget, tk.Tk, tk.Toplevel], message: str, status: str) -> None:
         # Display a temporary status message at the bottom of the widget

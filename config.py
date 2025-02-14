@@ -356,33 +356,41 @@ class Config:
 
     # Theme configurations
     LIGHT_THEME = {
-        'background': '#F8F9FA',  # 更柔和的背景色
-        'surface': '#FFFFFF',
-        'text': '#2C3E50',        # 更深的文字顏色
-        'text_secondary': '#6C757D',
-        'divider': '#DEE2E6',
+        'background': '#FFFFFF',
+        'surface': '#F5F5F5',
         'card': '#FFFFFF',
-        'card_shadow': '0 2px 4px rgba(0,0,0,0.1)',  # 卡片陰影
-        'sidebar': '#FFFFFF',
-        'sidebar_hover': '#F1F3F4',
-        'button': '#4A90E2',      # 更現代的按鈕顏色
+        'text': '#212121',
+        'text_secondary': '#757575',
+        'button': '#1976D2',
         'button_text': '#FFFFFF',
-        'button_hover': '#357ABD'
+        'button_hover': '#1565C0',
+        'primary': '#1976D2',
+        'sidebar': '#F8F9FA',
+        'sidebar_text': '#212121',
+        'sidebar_hover': '#E3F2FD',
+        'border': '#E0E0E0',
+        'error': '#DC3545',
+        'success': '#4CAF50',
+        'warning': '#FFC107',
     }
 
     DARK_THEME = {
-        'background': '#1A1A1A',
-        'surface': '#2D2D2D',
-        'text': '#E1E1E1',
-        'text_secondary': '#A0A0A0',
-        'divider': '#404040',
-        'card': '#2D2D2D',
-        'card_shadow': '0 2px 4px rgba(0,0,0,0.2)',
-        'sidebar': '#2D2D2D',
-        'sidebar_hover': '#3D3D3D',
-        'button': '#7B68EE',      # 更柔和的紫色
-        'button_text': '#FFFFFF',
-        'button_hover': '#6A5ACD'
+        'background': '#121212',
+        'surface': '#1E1E1E',
+        'card': '#242424',
+        'text': '#FFFFFF',
+        'text_secondary': '#B0B0B0',
+        'button': '#BB86FC',
+        'button_text': '#000000',
+        'button_hover': '#3700B3',
+        'primary': '#BB86FC',
+        'sidebar': '#1A1A1A',
+        'sidebar_text': '#FFFFFF',
+        'sidebar_hover': '#333333',
+        'border': '#333333',
+        'error': '#CF6679',
+        'success': '#03DAC6',
+        'warning': '#FFB74D',
     }
 
     # UI Style configurations
@@ -451,6 +459,9 @@ class Config:
     SMTP_FROM = "library@example.com"
     SMTP_USER = "your_email@gmail.com"
     SMTP_PASSWORD = "your_app_password"
+    
+    # Session settings
+    SESSION_TIMEOUT = 3600  # 1 hour in seconds
     
     @classmethod
     def get_font(cls, size='default', weight='normal'):

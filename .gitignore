@@ -175,3 +175,8 @@ pyrightconfig.json
 
 # End of https://www.toptal.com/developers/gitignore/api/python
 .vscode/settings.json
+library.db
+library.db
+library.db-shm
+library.db-shm
+library.db-wal
