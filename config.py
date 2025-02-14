@@ -12,10 +12,11 @@ class Config:
     DB_PATH = os.getenv('DB_PATH', 'library.db')
     CONNECTION_POOL_SIZE = int(os.getenv('POOL_SIZE', '5'))
 
+    # Loan settings
+    LOAN_PERIOD_DAYS = int(os.getenv('LOAN_PERIOD_DAYS', '14'))  # Default loan period is 14 days
+
     # Security settings
-    PASSWORD_SALT = os.getenv('PASSWORD_SALT')
-    if not PASSWORD_SALT:
-        PASSWORD_SALT = 'MY_SUPER_SECRET_SALT_123!@#$%^&*'  # Default value
+    # Remove PASSWORD_SALT since Argon2 handles salting internally
     
     JWT_SECRET = os.getenv('JWT_SECRET')
     if not JWT_SECRET:
@@ -88,7 +89,7 @@ class Config:
     }
     
     # Font settings
-    FONT_FAMILY = "Helvetica"
+    FONT_FAMILY = "Segoe UI"
     PADDING = 5
     BUTTON_HEIGHT = 2
     
@@ -333,9 +334,11 @@ class Config:
     
     # Update card styles
     CARD_STYLE = {
-        'padding': 15,
-        'radius': 10,
-        'shadow': '2px 2px 10px rgba(0, 0, 0, 0.1)'
+        'padding': 20,
+        'radius': 12,
+        'shadow': '0 4px 6px rgba(0, 0, 0, 0.1)',
+        'hover_shadow': '0 8px 12px rgba(0, 0, 0, 0.15)',
+        'border': '1px solid rgba(0, 0, 0, 0.1)'
     }
     
     # Modern UI Colors
@@ -440,6 +443,14 @@ class Config:
         'warning': '⚠️',
         'info': 'ℹ️'
     }
+    
+    # SMTP Configuration
+    SMTP_SERVER = "smtp.gmail.com"
+    SMTP_PORT = 587
+    SMTP_USE_TLS = True
+    SMTP_FROM = "library@example.com"
+    SMTP_USER = "your_email@gmail.com"
+    SMTP_PASSWORD = "your_app_password"
     
     @classmethod
     def get_font(cls, size='default', weight='normal'):

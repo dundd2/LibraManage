@@ -2,16 +2,47 @@ import hashlib
 import re
 import logging
 import tkinter as tk
-from tkinter import ttk
-from typing import Optional, List, Dict
+from tkinter import ttk, messagebox  # Added messagebox import
+from typing import Optional, List, Dict, Union
 from datetime import datetime, timedelta
 from config import Config
+from argon2 import PasswordHasher
+from argon2.exceptions import VerifyMismatchError
 
 # Setup logging
 logger = logging.getLogger(__name__)
 
 def hash_password(password: str) -> str:
-    return hashlib.sha256((password + Config.PASSWORD_SALT).encode()).hexdigest()
+    """
+    Hash a password using Argon2, which is currently the most secure password hashing algorithm.
+    Argon2 won the Password Hashing Competition in 2015 and is recommended by cryptography experts.
+    
+    Args:
+        password: The password to hash
+        
+    Returns:
+        The hashed password as a string
+    """
+    ph = PasswordHasher()
+    return ph.hash(password)
+
+def verify_password(password: str, hash: str) -> bool:
+    """
+    Verify a password against its hash using Argon2
+    
+    Args:
+        password: The password to verify
+        hash: The hash to verify against
+        
+    Returns:
+        True if the password matches the hash, False otherwise
+    """
+    ph = PasswordHasher()
+    try:
+        ph.verify(hash, password)
+        return True
+    except VerifyMismatchError:
+        return False
 
 def validate_email(email: str) -> bool:
     pattern = r'^[\w\.-]+@[\w\.-]+\.\w+$'
@@ -38,87 +69,48 @@ def validate_isbn(isbn: str) -> bool:
         return False
 
 def create_loading_indicator(parent: tk.Widget) -> ttk.Label:
-    """Create an animated loading indicator"""
-    loading_frame = ttk.Frame(parent)
-    loading_frame.pack(pady=20)
-    
-    dots = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
-    label = ttk.Label(loading_frame, 
-                     text=dots[0],
-                     font=('Segoe UI', 24))
-    label.pack()
-    
-    def animate():
-        current = label.cget("text")
-        next_dot = dots[(dots.index(current) + 1) % len(dots)]
-        label.configure(text=next_dot)
-        parent.after(100, animate)
-    
-    animate()
-    return loading_frame
+    """Create a loading indicator label"""
+    label = ttk.Label(parent, text="Loading...", font=('Segoe UI', 10))
+    label.pack(pady=10)
+    return label
 
-def show_status_message(parent: tk.Widget, message: str, type_: str = "info") -> None:
-    """Display improved status message with animation"""
-    theme = Config.DARK_THEME if hasattr(parent, 'is_dark_mode') and parent.is_dark_mode.get() else Config.LIGHT_THEME
-    
-    # Create floating message frame
-    frame = ttk.Frame(parent, style='Message.TFrame')
-    frame.place(relx=1, rely=0, anchor='ne', x=-20, y=20)
-    
-    # Icon and color mapping
-    icons = {
-        "info": Config.ICONS['info'],
-        "error": Config.ICONS['error'],
-        "success": Config.ICONS['success'],
-        "warning": Config.ICONS['warning']
-    }
-    
+def show_status_message(parent: Union[tk.Widget, tk.Tk, tk.Toplevel], message: str, type_: str = "info") -> None:
+    """Show a status message with the given type (info, error, warning, success)"""
     colors = {
-        "info": theme['button'],
-        "error": Config.COLORS['error'],
-        "success": Config.COLORS['success'],
-        "warning": Config.COLORS['warning']
+        "info": "#3498db",
+        "error": "#e74c3c",
+        "warning": "#f39c12",
+        "success": "#2ecc71"
     }
     
-    # Add icon
-    ttk.Label(frame,
-             text=icons.get(type_, icons['info']),
-             font=('Segoe UI', 16)).pack(side=tk.LEFT, padx=5)
-             
-    # Add message text
-    ttk.Label(frame,
-             text=message,
-             font=('Segoe UI', 11),
-             foreground=colors.get(type_, theme['text'])).pack(side=tk.LEFT, padx=5)
+    msg = messagebox.showinfo if type_ == "info" else \
+          messagebox.showerror if type_ == "error" else \
+          messagebox.showwarning if type_ == "warning" else \
+          messagebox.showinfo
     
-    # Animation effect
-    def fade_out():
-        for alpha in range(100, 0, -2):
-            frame.winfo_toplevel().attributes('-alpha', alpha/100)
-            frame.update()
-            frame.after(10)
-        frame.destroy()
-    
-    # Fade out after 3 seconds
-    parent.after(3000, fade_out)
+    msg(type_.title(), message)
 
 def create_tooltip(widget: tk.Widget, text: str) -> None:
-    """Create tooltip for widget"""
-    tooltip = tk.Toplevel(widget)
+    """Create a tooltip for a widget"""
+    tooltip = tk.Toplevel()
     tooltip.withdraw()
     tooltip.overrideredirect(True)
-    label = ttk.Label(tooltip, text=text, background="yellow", relief="solid", borderwidth=1)
+    
+    label = ttk.Label(tooltip, text=text, justify=tk.LEFT,
+                     background="#ffffe0", relief=tk.SOLID, borderwidth=1)
     label.pack()
-
-    def show_tooltip(event):
-        tooltip.wm_geometry(f"+{event.x_root + 20}+{event.y_root}")
+    
+    def enter(event):
         tooltip.deiconify()
-
-    def hide_tooltip(event):
+        x = widget.winfo_rootx() + widget.winfo_width()
+        y = widget.winfo_rooty()
+        tooltip.geometry(f"+{x}+{y}")
+        
+    def leave(event):
         tooltip.withdraw()
-
-    widget.bind("<Enter>", show_tooltip)
-    widget.bind("<Leave>", hide_tooltip)
+        
+    widget.bind('<Enter>', enter)
+    widget.bind('<Leave>', leave)
 
 def create_table(parent: tk.Widget, data: List[Dict],
                  headers: Optional[List[str]] = None) -> ttk.Frame:

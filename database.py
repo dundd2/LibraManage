@@ -5,7 +5,7 @@ from functools import lru_cache
 from queue import Queue
 from config import Config
 import logging
-from utils import hash_password
+from utils import hash_password, verify_password  # Updated import
 from datetime import datetime  # New import
 
 logger = logging.getLogger(__name__)
@@ -44,31 +44,37 @@ class DatabaseHandler:
                 CREATE TABLE IF NOT EXISTS users (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     username TEXT UNIQUE NOT NULL,
-                    password TEXT NOT NULL,
+                    password_hash TEXT NOT NULL, -- Hashed password using Argon2
                     role TEXT NOT NULL DEFAULT 'user',
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
             
+            # Create books table
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS books (
                     id INTEGER PRIMARY KEY,
                     title TEXT,
                     author TEXT,
-                    isbn TEXT UNIQUE,
+                    isbn TEXT UNIQUE, -- International Standard Book Number
                     quantity INTEGER,
-                    available INTEGER
+                    available INTEGER,
+                    category TEXT DEFAULT 'General'
                 )
             """)
+
+            # Create members table
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS members (
                     id INTEGER PRIMARY KEY,
                     name TEXT,
-                    email TEXT UNIQUE,
+                    email TEXT UNIQUE, -- Member's contact email
                     phone TEXT,
                     join_date TEXT
                 )
             """)
+
+            # Create transactions table
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS transactions (
                     id INTEGER PRIMARY KEY,
@@ -76,7 +82,7 @@ class DatabaseHandler:
                     member_id INTEGER,
                     issue_date TEXT,
                     return_date TEXT,
-                    status TEXT,
+                    status TEXT, -- Current status of the loan
                     FOREIGN KEY (book_id) REFERENCES books (id),
                     FOREIGN KEY (member_id) REFERENCES members (id)
                 )
@@ -94,7 +100,7 @@ class DatabaseHandler:
                     # Create if not exists
                     password_hash = hash_password("1")
                     cursor.execute("""
-                        INSERT INTO users (username, password, role)
+                        INSERT INTO users (username, password_hash, role)
                         VALUES (?, ?, ?)
                     """, ("1", password_hash, "1"))
                     conn.commit()
@@ -103,23 +109,45 @@ class DatabaseHandler:
             logger.error(f"Error creating default user: {e}")
             raise
 
-    def authenticate_user(self, username: str, password_hash: str) -> Optional[dict]:
-        """Authenticate user with username and password hash"""
+    def authenticate_user(self, username: str, password: str) -> Optional[Dict[str, Any]]:
+        """
+        Authenticate a user with username and password
+        Now using Argon2 verification instead of direct hash comparison
+        """
         try:
             with self.pool.get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT id, username, role, created_at 
-                    FROM users 
-                    WHERE username = ? AND password = ?
-                """, (username, password_hash))
+                query = "SELECT id, username, password_hash, role FROM users WHERE username = ?"
+                cursor.execute(query, (username,))
                 user = cursor.fetchone()
-                if user:
-                    return dict(user) if user else None
+                
+                if user and verify_password(password, user['password_hash']):  # Using verify_password instead of comparing hashes
+                    return {
+                        'id': user['id'],
+                        'username': user['username'],
+                        'role': user['role']
+                    }
                 return None
+                
         except Exception as e:
             logger.error(f"Authentication error: {e}")
             return None
+
+    def add_user(self, username: str, password: str, role: str = 'user') -> bool:
+        """
+        Add a new user with Argon2 hashed password
+        """
+        try:
+            with self.pool.get_connection() as conn:
+                cursor = conn.cursor()
+                password_hash = hash_password(password)  # Using new Argon2 hash function
+                query = "INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)"
+                cursor.execute(query, (username, password_hash, role))
+                conn.commit()
+                return True
+        except Exception as e:
+            logger.error(f"Error adding user: {e}")
+            return False
 
     @lru_cache(maxsize=100)
     def get_book_by_isbn(self, isbn: str) -> Optional[Dict[str, Any]]:
@@ -138,9 +166,9 @@ class DatabaseHandler:
                 search_query = f'%{query}%'
                 cursor.execute('''
                     SELECT * FROM books 
-                    WHERE title LIKE ? OR author LIKE ? OR isbn LIKE ?
+                    WHERE title LIKE ? OR author LIKE ? OR isbn LIKE ? OR category LIKE ?
                     LIMIT ? OFFSET ?
-                ''', (search_query, search_query, search_query, 
+                ''', (search_query, search_query, search_query, search_query,
                       Config.ROWS_PER_PAGE, offset))
                 books = cursor.fetchall()
                 return [dict(row) for row in books]
@@ -204,11 +232,11 @@ class DatabaseHandler:
             ''')
             return [dict(row) for row in cursor.fetchall()]
 
-    def add_book(self, title: str, author: str, isbn: str, quantity: int) -> None:
+    def add_book(self, title: str, author: str, isbn: str, quantity: int, category: str = 'General') -> None:
         with self.pool.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute('INSERT INTO books (title, author, isbn, quantity, available) VALUES (?, ?, ?, ?, ?)',
-                           (title, author, isbn, quantity, quantity))
+            cursor.execute('INSERT INTO books (title, author, isbn, quantity, available, category) VALUES (?, ?, ?, ?, ?, ?)',
+                           (title, author, isbn, quantity, quantity, category))
             conn.commit()
             logger.info(f"Book '{title}' added to the database.")
 
@@ -342,3 +370,113 @@ class DatabaseHandler:
             cursor.execute('SELECT * FROM books')
             books = cursor.fetchall()
             return [dict(book) for book in books]
+
+    def get_books_by_category(self) -> List[tuple]:
+        with self.pool.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT category, COUNT(*) 
+                FROM books 
+                GROUP BY category
+            """)
+            return cursor.fetchall()
+
+    def get_monthly_loans(self) -> List[tuple]:
+        with self.pool.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT strftime('%Y-%m', issue_date) as month, COUNT(*) 
+                FROM transactions 
+                GROUP BY month 
+                ORDER BY month DESC 
+                LIMIT 12
+            """)
+            return cursor.fetchall()
+
+    def get_categories(self) -> List[str]:
+        with self.pool.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT DISTINCT category FROM books")
+            return [row[0] for row in cursor.fetchall()]
+
+    def get_overdue_loans(self) -> List[Dict[str, Any]]:
+        """Get all overdue book loans"""
+        try:
+            with self.pool.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT 
+                        t.id,
+                        b.title as book_title,
+                        m.name as member_name,
+                        m.email as member_email,
+                        t.issue_date,
+                        JULIANDAY('now') - JULIANDAY(t.issue_date) as days_overdue
+                    FROM transactions t
+                    JOIN books b ON t.book_id = b.id
+                    JOIN members m ON t.member_id = m.id
+                    WHERE t.return_date IS NULL 
+                    AND JULIANDAY('now') - JULIANDAY(t.issue_date) > ?
+                    ORDER BY days_overdue DESC
+                """, (Config.LOAN_PERIOD_DAYS,))
+                overdue = cursor.fetchall()
+                return [dict(loan) for loan in overdue]
+        except Exception as e:
+            logger.error(f"Error getting overdue loans: {e}")
+            return []
+
+    def execute_query(self, query: str, params: tuple = ()) -> List[Dict[str, Any]]:
+        """
+        Execute a SQL query and return results as a list of dictionaries
+        
+        Args:
+            query: SQL query string with placeholders
+            params: Tuple of parameters to substitute in query
+            
+        Returns:
+            List of dictionaries containing query results
+        """
+        try:
+            with self.pool.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(query, params)
+                
+                # Get column names from cursor description
+                columns = [desc[0] for desc in cursor.description]
+                
+                # Convert results to list of dictionaries
+                results = []
+                for row in cursor.fetchall():
+                    results.append(dict(zip(columns, row)))
+                    
+                return results
+                
+        except sqlite3.Error as e:
+            logger.error(f"Database error: {e}")
+            raise Exception(f"Query execution failed: {e}")
+
+    def get_loans(self, limit: int = 5) -> List[Dict[str, Any]]:
+        """Get recent loans with basic information"""
+        query = """
+            SELECT l.id, b.title as book_title, m.name as member_name, l.loan_date
+            FROM loans l
+            JOIN books b ON l.book_id = b.id
+            JOIN members m ON l.member_id = m.id
+            WHERE l.return_date IS NULL
+            ORDER BY l.loan_date DESC
+            LIMIT ?
+        """
+        return self.execute_query(query, (limit,))
+
+    def get_returns(self, limit: int = 5) -> List[Dict[str, Any]]:
+        """Get recent returns with basic information"""
+        query = """
+            SELECT l.id, b.title as book_title, m.name as member_name, l.return_date
+            FROM loans l
+            JOIN books b ON l.book_id = b.id
+            JOIN members m ON l.member_id = m.id
+            WHERE l.return_date IS NOT NULL
+            ORDER BY l.return_date DESC
+            LIMIT ?
+        """
+        return self.execute_query(query, (limit,))
